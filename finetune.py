@@ -40,7 +40,7 @@ def finetune(novel_loader, n_query = 15, pretrained_dataset='miniImageNet', free
 
     acc_all = []
 
-    for _, (x, y) in enumerate(novel_loader):
+    for _, (x, y) in enumerate(novel_loader): # for each batch
 
         ###############################################################################################
         # load pretrained model on miniImageNet
@@ -111,6 +111,7 @@ def finetune(novel_loader, n_query = 15, pretrained_dataset='miniImageNet', free
         
         classifier.train()
 
+        # adapting the classifier using n * k support example for 100 epochs
         for epoch in range(total_epoch):
             rand_id = np.random.permutation(support_size)
 
@@ -137,7 +138,8 @@ def finetune(novel_loader, n_query = 15, pretrained_dataset='miniImageNet', free
                 
                 if freeze_backbone is False:
                     delta_opt.step()
-
+                    
+        # evaluate the model and classifier using the query set
         pretrained_model.eval()
         classifier.eval()
 

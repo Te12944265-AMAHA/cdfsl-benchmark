@@ -78,7 +78,7 @@ class SetDataset:
         return next(iter(self.sub_dataloader[i]))
 
     def __len__(self):
-        return len(self.sub_dataloader)
+        return len(self.sub_dataloader) # number of classes
 
 class SubDataset:
     def __init__(self, sub_meta, cl, transform=transforms.ToTensor(), target_transform=identity):
