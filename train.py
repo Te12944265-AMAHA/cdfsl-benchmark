@@ -15,17 +15,17 @@ from methods.baselinetrain import BaselineTrain
 from methods.protonet import ProtoNet
 
 from io_utils import model_dict, parse_args, get_resume_file  
-from datasets import miniImageNet_few_shot, DTD_few_shot
+from datasets import miniImageNet_few_shot, DTD_few_shot, Chest_few_shot, ISIC_few_shot, CropDisease_few_show, EuroSAT_few_shot
 
 
 def train(base_loader, model, optimization, start_epoch, stop_epoch, params):    
     if optimization == 'Adam':
-        optimizer = torch.optim.Adam(model.parameters())
+        optimizer = torch.optim.Adam(model.parameters(), lr=params.lr)
     else:
        raise ValueError('Unknown optimization, please define by yourself')     
 
     for epoch in range(start_epoch,stop_epoch):
-        model.train()
+        model.train() # sets the training mode
         model.train_loop(epoch, base_loader,  optimizer ) 
 
         if not os.path.isdir(params.checkpoint_dir):
@@ -52,7 +52,6 @@ if __name__=='__main__':
             base_loader = datamgr.get_data_loader(aug = params.train_aug )
 
         elif params.dataset == "CUB":
-
             base_file = configs.data_dir['CUB'] + 'base.json' 
             base_datamgr    = SimpleDataManager(image_size, batch_size = 16)
             base_loader     = base_datamgr.get_data_loader( base_file , aug = params.train_aug )
@@ -83,8 +82,23 @@ if __name__=='__main__':
         test_few_shot_params     = dict(n_way = params.test_n_way, n_support = params.n_shot) 
 
         if params.dataset == "miniImageNet":
-
             datamgr            = miniImageNet_few_shot.SetDataManager(image_size, n_query = n_query,  **train_few_shot_params)
+            base_loader        = datamgr.get_data_loader(aug = params.train_aug)
+
+        elif params.dataset == "ChestX":
+            datamgr            = Chest_few_shot.SetDataManager(image_size, n_query = n_query,  **train_few_shot_params)
+            base_loader        = datamgr.get_data_loader(aug = params.train_aug)
+
+        elif params.dataset == "EuroSAT":
+            datamgr            = EuroSAT_few_shot.SetDataManager(image_size, n_query = n_query,  **train_few_shot_params)
+            base_loader        = datamgr.get_data_loader(aug = params.train_aug)
+
+        elif params.dataset == "ISIC2018":
+            datamgr            = ISIC_few_shot.SetDataManager(image_size, n_query = n_query,  **train_few_shot_params)
+            base_loader        = datamgr.get_data_loader(aug = params.train_aug)
+        
+        elif params.dataset == "CropDiseases":
+            datamgr            = CropDisease_few_show.SetDataManager(image_size, n_query = n_query,  **train_few_shot_params)
             base_loader        = datamgr.get_data_loader(aug = params.train_aug)
 
         else:

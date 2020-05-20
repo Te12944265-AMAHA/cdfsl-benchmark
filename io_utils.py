@@ -12,20 +12,32 @@ def parse_args(script):
     parser.add_argument('--dataset'     , default='miniImagenet',        help='training base model')
     parser.add_argument('--model'       , default='ResNet10',      help='backbone architecture') 
     parser.add_argument('--method'      , default='baseline',   help='baseline/protonet') 
+    # --exp_id
+    # --load_modelpath
     parser.add_argument('--train_n_way' , default=5, type=int,  help='class num to classify for training')
     parser.add_argument('--test_n_way'  , default=5, type=int,  help='class num to classify for testing (validation) ')
     parser.add_argument('--n_shot'      , default=5, type=int,  help='number of labeled data in each class, same as n_support') 
+    # --n_shot_test
+
     parser.add_argument('--train_aug'   , action='store_true',  help='perform data augmentation or not during training ') 
+    # --adversarial
+    # --adaptFinetune
+    # --dan
     parser.add_argument('--freeze_backbone'   , action='store_true', help='Freeze the backbone network for finetuning') 
 
     parser.add_argument('--models_to_use', '--names-list', nargs='+', default=['miniImageNet', 'caltech256', 'DTD', 'cifar100', 'CUB'], help='pretained model to use')
     parser.add_argument('--fine_tune_all_models'   , action='store_true',  help='fine-tune each model before selection') #still required for save_features.py and test.py to find the model path correctly
+    # --cosine
 
     if script == 'train':
         parser.add_argument('--num_classes' , default=200, type=int, help='total number of classes in softmax, only used in baseline') #make it larger than the maximum label value in base class
         parser.add_argument('--save_freq'   , default=50, type=int, help='Save frequency')
         parser.add_argument('--start_epoch' , default=0, type=int,help ='Starting epoch')
         parser.add_argument('--stop_epoch'  , default=400, type=int, help ='Stopping epoch') # for meta-learning methods, each epoch contains 100 episodes
+        # --gamma
+        # --lr
+        # --resume
+        # --warmup
     
     elif script == 'save_features':
         parser.add_argument('--split'       , default='novel', help='base/val/novel') #default novel, but you can also test base/val class accuracy if you want 
