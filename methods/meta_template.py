@@ -15,6 +15,9 @@ class MetaTemplate(nn.Module):
         self.n_query    = -1 #(change depends on input) 
         self.feature    = model_func()
         self.feat_dim   = self.feature.final_feat_dim
+        if (torch.cuda.device_count() > 1):
+            print("Let's use", torch.cuda.device_count(), "GPUs!")
+            self.feature = nn.DataParallel(self.feature)
         self.change_way = change_way  #some methods allow different_way classification during training and test
 
     @abstractmethod
@@ -51,7 +54,58 @@ class MetaTemplate(nn.Module):
         top1_correct = np.sum(topk_ind[:,0] == y_query)
         return float(top1_correct), len(y_query)
 
-    def train_loop(self, epoch, train_loader, optimizer ):
+
+    def train_loop_PRODA(self, epoch, train_loaders, optimizer, writer, params=None):
+        print_freq = 10
+
+        tl_source = iter(train_loaders[0])
+        tl_target = iter(train_loaders[1])
+        num_batches = np.min([len(tl_source), len(tl_target)]) # num_batches few-show episodes
+
+        avg_loss = 0
+        avg_lossP = 0 # classifier loss on source domain
+        avg_lossAdv = 0 # discrinator loss on source & target domain
+        for i in range(num_batches):
+            x_source, _ = next(tl_source)
+            x_target, _ = next(tl_target)
+
+            # Note : Temp hack since couldnt find why subsampler works differently for source and target
+            # command to check: tl_source.dataset.sub_dataloader[-1].batch_sampler.sampler.num_samples
+
+            # # if cross_char, need to adjust the shape of target
+            x_target = x_target[:, :x_source.shape[1], :, :, :]
+            self.n_query = x_source.size(1) - self.n_support
+
+            if self.change_way:
+                self.n_way = x_source.size(0)
+
+            optimizer.zero_grad()
+
+            loss, lossP, lossAdv = self.set_forward_loss(x_source, x_target, params=params, epoch=epoch)
+            loss.backward()
+            optimizer.step()
+            
+            # TODO: differentiate loss.data.item() and loss.item()
+            avg_loss = avg_loss + loss.data.item()
+            avg_lossP = avg_lossP + lossP.data.item()
+            avg_lossAdv = avg_lossAdv + lossAdv.data.item()
+
+            if i % print_freq==0:
+                mean_loss =  avg_loss/float(i+1)
+                mean_lossP =  avg_lossP/float(i+1)
+                mean_lossAdv =  avg_lossAdv/float(i+1)
+                #print(optimizer.state_dict()['param_groups'][0]['lr'])
+                print('Epoch {:d} | Batch {:d}/{:d} | total loss {:f} | LossP {:f} | Loss_adv {:f}'.
+                      format(epoch, i, num_batches, mean_loss, mean_lossP, mean_lossAdv))
+        writer.add_scalar('train/loss', mean_loss, epoch)
+        writer.add_scalar('train/loss primary', mean_lossP, epoch)
+        writer.add_scalar('train/loss adversarial', mean_lossAdv, epoch)
+        if epoch==2:
+            log_images(x_source, 'train/source', epoch, writer)
+            log_images(x_target, 'train/target', epoch, writer)
+
+
+    def train_loop(self, epoch, train_loader, optimizer, writer, params = None):
         print_freq = 10
 
         avg_loss=0
@@ -66,8 +120,16 @@ class MetaTemplate(nn.Module):
             avg_loss = avg_loss+loss.item()
 
             if i % print_freq==0:
+                mean_loss =  avg_loss/float(i+1)
                 #print(optimizer.state_dict()['param_groups'][0]['lr'])
-                print('Epoch {:d} | Batch {:d}/{:d} | Loss {:f}'.format(epoch, i, len(train_loader), avg_loss/float(i+1)))
+                print('Epoch {:d} | Batch {:d}/{:d} | Loss {:f}'.format(epoch, i, len(train_loader), mean_loss))
+
+        # log
+        writer.add_scalar('train/loss', mean_loss, epoch)
+        if epoch==2:
+            log_images(x[:, :self.n_support,:,:,:], 'train/support_set', epoch, writer)
+            log_images(x[:, self.n_support:,:,:,:], 'train/query_set', epoch, writer)
+
 
     def test_loop(self, test_loader, record = None):
         correct =0
@@ -80,13 +142,17 @@ class MetaTemplate(nn.Module):
             if self.change_way:
                 self.n_way  = x.size(0)
             correct_this, count_this = self.correct(x)
-            acc_all.append(correct_this/ count_this*100  )
+            acc_all.append(correct_this / count_this*100)
 
         acc_all  = np.asarray(acc_all)
         acc_mean = np.mean(acc_all)
         acc_std  = np.std(acc_all)
         print('%d Test Acc = %4.2f%% +- %4.2f%%' %(iter_num,  acc_mean, 1.96* acc_std/np.sqrt(iter_num)))
-
+        # log
+        writer.add_scalar('test/accuracy', acc_mean, epoch)
+        if np.mod(epoch,100)==0:
+            log_images(x[:, :self.n_support,:,:,:], 'test/support_set', epoch, writer)
+            log_images(x[:, self.n_support:,:,:,:], 'test/query_set', epoch, writer)
         return acc_mean
 
     def set_forward_adaptation(self, x, is_feature = True): #further adaptation, default is fixing feature and train a new softmax clasifier
@@ -123,3 +189,12 @@ class MetaTemplate(nn.Module):
 
         scores = linear_clf(z_query)
         return scores
+
+
+def log_images(x, logid, epoch, writer):
+    sliced_img = x[:, :, :, :, :]
+    # sliced_img = x[:, :3, :, :, :]
+    n_way, n_shot, chan, row, col = sliced_img.shape
+    sliced_img = sliced_img.reshape(-1, chan, row, col)
+    disp_img = make_grid(sliced_img, nrow=n_shot, normalize=True)
+    writer.add_image(logid, disp_img, epoch)

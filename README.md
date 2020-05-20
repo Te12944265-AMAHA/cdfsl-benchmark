@@ -133,6 +133,12 @@ h5py 2.9.0
         python ./train.py --dataset miniImageNet --model ResNet10  --method protonet --n_shot 5 --train_aug
     ```
 
+5. Adapt model to novel dataset using unlabeled data
+
+    ```bash
+        python ./train.py --dataset ChestX --model ResNet10  --method protonet --n_shot 5 --train_aug --adversarial
+    ```
+
 6. Save features for evaluation (optional, if there is no need to adapt the features during testing) 
 
     • *Save features for testing*
