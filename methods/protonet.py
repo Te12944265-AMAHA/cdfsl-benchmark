@@ -26,6 +26,8 @@ class ProtoNet(MetaTemplate):
 
 
     def set_forward(self,x,is_feature = False):
+        # we want to find the prototypes using the support set
+        # and assign labels to query set examples using a distance function
         z_support, z_query  = self.parse_feature(x,is_feature)
 
         z_support   = z_support.contiguous()
@@ -50,6 +52,20 @@ class ProtoNet(MetaTemplate):
             return scores
 
 
+    def discriminator_score(self, zS, zT, adv_loss_fn, epoch):
+        logitS = self.discriminator(zS)
+        logitT = self.discriminator(zT)
+        ls = adv_loss_fn(logitS, torch.ones(zS.shape[0], dtype=torch.long).cuda())
+        lt = adv_loss_fn(logitT, torch.zeros(zT.shape[0], dtype=torch.long).cuda())
+        loss = ls+lt
+
+        # SPL: reweighting of loss
+        corr = torch.dot((zS / torch.norm(zS)).squeeze(), (zT / torch.norm(zT)).squeeze()).unsqueeze(0)
+        wt = torch.norm(corr)
+
+        return wt*loss
+
+
     def set_forward_loss(self, x):
         y_query = torch.from_numpy(np.repeat(range( self.n_way ), self.n_query ))
         y_query = Variable(y_query.cuda())
@@ -57,6 +73,35 @@ class ProtoNet(MetaTemplate):
         scores = self.set_forward(x)
 
         return self.loss_fn(scores, y_query )
+
+
+    def set_forward_loss(self, xS, xT=None, params = None, epoch=None):
+        y_query = torch.from_numpy(np.repeat(range(self.n_way), self.n_query))
+        y_query = Variable(y_query.cuda())
+        #y_query = y_query.cuda()
+
+        scores, z_source = self.set_forward(xS, is_adversarial=True)
+        proto_loss = self.loss_fn(scores, y_query) # classifier loss
+
+        # if self.discriminator is not None:
+        if params is not None:
+            if params.adversarial:
+                if params.n_shot_test != -1: self.n_support=params.n_shot_test
+                _, z_target = self.set_forward(xT, is_adversarial=True)
+                adverasrial_loss = self.discriminator_score(z_source, z_target, self.adv_loss_fn, epoch)
+                domain_reg = params.gamma
+                loss = proto_loss + domain_reg*adverasrial_loss
+                return loss, proto_loss, adverasrial_loss
+            elif params.adaptFinetune:
+                assert (params.adversarial==False)
+                _, z_target, y_target = self.set_forward(xT, is_adaptFinetune = True)
+                logitT = self.adaptive_classifier(z_target)
+                adaptive_loss = self.adv_loss_fn(logitT, y_target.cuda())
+                adaptive_wt = 1.0
+                loss = proto_loss + adaptive_wt*adaptive_loss
+                return loss, proto_loss, adaptive_loss
+        else:
+            return proto_loss
 
 
 def euclidean_dist( x, y):
@@ -71,3 +116,20 @@ def euclidean_dist( x, y):
     y = y.unsqueeze(0).expand(n, m, d)
 
     return torch.pow(x - y, 2).sum(2)
+
+
+def cosine_dist( x, y, tau):
+    # x: N x D
+    # y: M x D
+    n = x.size(0)
+    m = y.size(0)
+    d = x.size(1)
+    assert d == y.size(1)
+
+    x = x/torch.norm(x, p=2, dim=1).unsqueeze(1).repeat(1,d)
+    y = y/torch.norm(y, p=2, dim=1).unsqueeze(1).repeat(1,d)
+
+    x = x.unsqueeze(1).expand(n, m, d)
+    y = y.unsqueeze(0).expand(n, m, d)
+
+    return tau*torch.sum(x*y, dim=2)
